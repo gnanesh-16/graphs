@@ -85,16 +85,8 @@
     }
 
     var marker, circle, secondMarker, routeControl;
-    var updateCount = 0;
-    var maxUpdates = 2;
 
     function updatePosition(position) {
-        if (updateCount >= maxUpdates) {
-            navigator.geolocation.clearWatch(watchID);
-            return;
-        }
-        updateCount++;
-
         var lat = position.coords.latitude
         var long = position.coords.longitude
         var accuracy = position.coords.accuracy
@@ -171,4 +163,6 @@
             alert('Current location not available.');
         }
     });
+
+    // Remove the page reload function
 </script>
