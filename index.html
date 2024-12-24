@@ -84,7 +84,8 @@
         });
     }
 
-    var marker, circle, secondMarker, routeControl;
+    var marker, circle, secondMarker, routeControl, pathLine;
+    var pathCoordinates = [];
 
     function updatePosition(position) {
         var lat = position.coords.latitude
@@ -104,6 +105,14 @@
             circle.on('click', function() {
                 map.setView([lat, long], 18);
             });
+        }
+
+        // Update path coordinates and polyline
+        pathCoordinates.push([lat, long]);
+        if (pathLine) {
+            pathLine.setLatLngs(pathCoordinates);
+        } else {
+            pathLine = L.polyline(pathCoordinates, { color: 'red' }).addTo(map);
         }
 
         var featureGroup = L.featureGroup([marker, circle]).addTo(map)
