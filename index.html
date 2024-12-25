@@ -19,6 +19,7 @@
         #map {
             width: 100%;
             height: 100vh;
+            cursor: crosshair;
         }
 
         #controls {
@@ -123,6 +124,8 @@
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/0.4.1/html2canvas.min.js"></script>
+<script src="leaflet-hash.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet.locatecontrol@0.74.0/dist/L.Control.Locate.min.js" charset="utf-8"></script>
 <script>
     // Generate a unique 4-digit ID for each user
     function generateUniqueId() {
@@ -176,14 +179,68 @@
     };
     L.control.layers(baseMaps).addTo(map);
 
+    // Modify the geolocation check and add default location handling
+    var defaultLocation = [13.7563, 100.5018]; // Bangkok coordinates as default
+
     if (!navigator.geolocation) {
-        console.log("Your browser doesn't support geolocation feature!")
+        console.log("Your browser doesn't support geolocation feature!");
+        initializeWithDefaultLocation();
     } else {
-        var watchID = navigator.geolocation.watchPosition(updatePosition, showError, {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0
-        });
+        navigator.geolocation.getCurrentPosition(
+            updatePosition,
+            function(error) {
+                console.log("Geolocation error, using default location");
+                initializeWithDefaultLocation();
+                showError(error);
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            }
+        );
+    }
+
+    function initializeWithDefaultLocation() {
+        var lat = defaultLocation[0];
+        var long = defaultLocation[1];
+
+        if (marker) {
+            marker.setLatLng([lat, long]);
+        } else {
+            marker = L.marker([lat, long]).addTo(map)
+                .bindTooltip("Default Location - Lat: " + lat + " Long: " + long)
+                .openTooltip();
+        }
+
+        if (circle) {
+            circle.setLatLng([lat, long]);
+        } else {
+            circle = L.circle([lat, long], { radius: 20 }).addTo(map);
+        }
+
+        map.setView([lat, long], 13);
+        console.log("Using default location - Lat: " + lat + " Long: " + long);
+    }
+
+    function showError(error) {
+        var errorMsg;
+        switch (error.code) {
+            case error.PERMISSION_DENIED:
+                errorMsg = "Location access denied. Using default location.";
+                break;
+            case error.POSITION_UNAVAILABLE:
+                errorMsg = "Location unavailable. Using default location.";
+                break;
+            case error.TIMEOUT:
+                errorMsg = "Location request timed out. Using default location.";
+                break;
+            case error.UNKNOWN_ERROR:
+                errorMsg = "Unknown error occurred. Using default location.";
+                break;
+        }
+        console.log(errorMsg);
+        alert(errorMsg);
     }
 
     var marker, circle, secondMarker, routeControl, pathLine, dotMarker;
@@ -282,23 +339,6 @@
         map.setView([lat, long], 18); // Set the map view to the current location with a zoom level of 18
 
         console.log("Your coordinate is: Lat: " + lat + " Long: " + long + " Accuracy: " + accuracy)
-    }
-
-    function showError(error) {
-        switch (error.code) {
-            case error.PERMISSION_DENIED:
-                console.log("User denied the request for Geolocation.")
-                break;
-            case error.POSITION_UNAVAILABLE:
-                console.log("Location information is unavailable.")
-                break;
-            case error.TIMEOUT:
-                console.log("The request to get user location timed out.")
-                break;
-            case error.UNKNOWN_ERROR:
-                console.log("An unknown error occurred.")
-                break;
-        }
     }
 
     function toggleButtonClass(buttonId) {
@@ -498,4 +538,40 @@
             }
         }, 1000);
     }
+
+    // Add leaflet hash for sharing location
+    var hash = new L.Hash(map);
+
+    // Add locate control to the map
+    L.control.locate({
+        setView: 'once',
+        keepCurrentZoomLevel: true,
+        drawCircle: false,
+        drawMarker: false,
+        showPopup: false,
+        locateOptions: {
+            maxZoom: 18,
+            watch: true,
+            enableHighAccuracy: true
+        }
+    }).addTo(map).start();
+
+    // Click event to add marker and share location
+    map.on("click", function (e) {
+        var coord = e.latlng;
+        var lat = coord.lat;
+        var lng = coord.lng;
+
+        // Zoom map to new location
+        map.flyTo(new L.LatLng(lat, lng));
+
+        L.marker([lat, lng])
+            .addTo(map)
+            .bindPopup(
+                "<h3> Your Location </h3>" +
+                "Latitude: " + lat + "<br> Longitude: " + lng +
+                '<br><a href="https://www.google.com/maps/search/?api=1&query=' + lat + ',' + lng + '" target="_blank">Open in Google Maps</a>'
+            )
+            .openPopup();
+    });
 </script>
