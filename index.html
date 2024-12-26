@@ -45,11 +45,8 @@
         }
 
         #userIdDisplay {
-            background-color: green;
-            color: white;
-            padding: 5px;
-            border-radius: 5px;
-            animation: blink 1s infinite;
+            display: none;
+            /* Hide the userIdDisplay element */
         }
 
         @keyframes blink {
@@ -113,7 +110,7 @@
         <button id="stopRecordBtn">Stop Record</button>
         <button id="createCheckpointBtn">Create Checkpoint</button>
         <button id="shareLocationBtn">Share Location</button>
-        <input type="number" id="userIdInput" placeholder="Enter User ID" min="1000" max="9999" />
+        <input type="text" id="userIdInput" placeholder="Enter User ID or Location Link" />
         <button id="findUserBtn">Find User</button>
         <div id="userIdDisplay">User ID: <span id="userId"></span></div>
         <button id="sosBtn">SOS</button>
@@ -133,26 +130,17 @@
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/0.4.1/html2canvas.min.js"></script>
 <script>
-    // Generate a unique 4-digit ID for each user
-    function generateUniqueId() {
-        return Math.floor(1000 + Math.random() * 9000);
-    }
-
-    var userId = generateUniqueId();
-    document.getElementById('userId').textContent = userId;
-    console.log("Your User ID is: " + userId);
-
-    // Store user ID and location in local storage
-    function storeUserLocation(userId, lat, long) {
+    // Store user location without userId
+    function storeUserLocation(lat, long) {
         var userLocations = JSON.parse(localStorage.getItem('userLocations')) || {};
-        userLocations[userId] = [lat, long];
+        userLocations['current'] = [lat, long];
         localStorage.setItem('userLocations', JSON.stringify(userLocations));
     }
 
-    // Retrieve user location from local storage
-    function getUserLocation(userId) {
+    // Retrieve user location without userId
+    function getUserLocation() {
         var userLocations = JSON.parse(localStorage.getItem('userLocations')) || {};
-        return userLocations[userId];
+        return userLocations['current'];
     }
 
     // Map initialization 
@@ -245,8 +233,8 @@
             recordingLine.addLatLng([lat, long]);
         }
 
-        // Store user location
-        storeUserLocation(userId, lat, long);
+        // Store user location without userId
+        storeUserLocation(lat, long);
 
         // Update route if target user is moving
         if (targetUserId && userLocations[targetUserId]) {
@@ -386,9 +374,39 @@
     });
 
     document.getElementById('findUserBtn').addEventListener('click', function () {
-        targetUserId = document.getElementById('userIdInput').value;
-        var targetLocation = getUserLocation(targetUserId);
-        if (targetLocation) {
+        var input = document.getElementById('userIdInput').value;
+        var targetLocation;
+
+        if (input.includes('google.com/maps')) {
+            var coords = input.match(/q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+            if (coords) {
+                targetLocation = [parseFloat(coords[1]), parseFloat(coords[2])];
+                if (secondMarker) {
+                    map.removeLayer(secondMarker);
+                }
+                secondMarker = L.marker(targetLocation, { icon: L.divIcon({ className: 'custom-icon', html: '<div style="background-color: red; width: 12px; height: 12px; border-radius: 50%;"></div>' }) }).addTo(map)
+                    .bindTooltip("Lat: " + targetLocation[0] + " Long: " + targetLocation[1])
+                    .openTooltip();
+                map.setView(targetLocation, 18);
+
+                // Create a path from the current location to the pasted location marker
+                if (routeControl) {
+                    map.removeControl(routeControl);
+                }
+                routeControl = L.Routing.control({
+                    waypoints: [
+                        marker.getLatLng(),
+                        L.latLng(targetLocation[0], targetLocation[1])
+                    ],
+                    routeWhileDragging: true
+                }).addTo(map);
+            }
+        } else {
+            targetUserId = input;
+            targetLocation = getUserLocation(targetUserId);
+        }
+
+        if (targetLocation && !input.includes('google.com/maps')) {
             if (routeControl) {
                 map.removeControl(routeControl);
             }
@@ -399,8 +417,8 @@
                 ],
                 routeWhileDragging: true
             }).addTo(map);
-        } else {
-            alert('User ID not found.');
+        } else if (!targetLocation) {
+            alert('User ID or Location not found.');
         }
     });
 
