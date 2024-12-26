@@ -400,6 +400,9 @@
                     ],
                     routeWhileDragging: true
                 }).addTo(map);
+
+                // Activate SOS for found user
+                activateSOS(true);
             }
         } else {
             targetUserId = input;
@@ -417,6 +420,9 @@
                 ],
                 routeWhileDragging: true
             }).addTo(map);
+
+            // Activate SOS for found user
+            activateSOS(true);
         } else if (!targetLocation) {
             alert('User ID or Location not found.');
         }
@@ -445,7 +451,7 @@
 
     document.getElementById('sosBtn').addEventListener('click', function () {
         if (!sosActive) {
-            activateSOS();
+            activateSOS(false); // Do not activate SOS for current location
         } else {
             deactivateSOS();
         }
@@ -481,14 +487,14 @@
         }
     });
 
-    function activateSOS() {
+    function activateSOS(forFoundUser) {
         sosActive = true;
         document.getElementById('sosBtn').classList.add('sos-active');
 
-        if (marker) {
-            // Create SOS marker
+        if (forFoundUser && secondMarker) {
+            // Create SOS marker for found user
             if (sosMarker) map.removeLayer(sosMarker);
-            sosMarker = L.circleMarker(marker.getLatLng(), {
+            sosMarker = L.circleMarker(secondMarker.getLatLng(), {
                 radius: 20,
                 color: 'red',
                 fillColor: '#f03',
@@ -508,7 +514,7 @@
             }, 200);
 
             // Simulate sending SOS signal
-            console.log('SOS signal sent from location:', marker.getLatLng());
+            console.log('SOS signal sent from location:', secondMarker.getLatLng());
         }
     }
 
@@ -543,11 +549,12 @@
             if (i < recordedPath.length) {
                 replayMarker.setLatLng([recordedPath[i][0], recordedPath[i][1]]);
                 map.setView([recordedPath[i][0], recordedPath[i][1]], map.getZoom());
+                replayMarker.bindTooltip(`Lat: ${recordedPath[i][0].toFixed(6)} Long: ${recordedPath[i][1].toFixed(6)}`).openTooltip();
                 i++;
             } else {
                 clearInterval(replayAnimation);
                 map.removeLayer(replayMarker);
             }
-        }, 1000);
+        }, 500); // Move faster by reducing the interval time
     }
 </script>
