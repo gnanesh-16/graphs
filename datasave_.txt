@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Realtime location tracker</title>
+
+    <!-- leaflet css  -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        #map {
+            width: 100%;
+            height: 100vh;
+        }
+
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .dot {
+            height: 10px;
+            width: 10px;
+            background-color: blue;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .clicked {
+            background-color: lightgreen;
+        }
+
+        #userIdDisplay {
+            display: none;
+            /* Hide the userIdDisplay element */
+        }
+
+        @keyframes blink {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        #zoomControls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .sos-active {
+            background-color: red !important;
+            animation: sos-flash 1s infinite;
+        }
+
+        @keyframes sos-flash {
+            0% {
+                background-color: red;
+            }
+
+            50% {
+                background-color: white;
+            }
+
+            100% {
+                background-color: red;
+            }
+        }
+
+        #sosBtn {
+            background-color: #ff4444;
+            color: white;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="controls">
+        <button id="addMarkerBtn">Add Marker</button>
+        <button id="routeBtn">Create Route</button>
+        <button id="zoomToCurrentLocationBtn">Zoom to Current Location</button>
+        <button id="startRecordBtn">Start Record</button>
+        <button id="stopRecordBtn">Stop Record</button>
+        <button id="createCheckpointBtn">Create Checkpoint</button>
+        <button id="shareLocationBtn">Share Location</button>
+        <input type="text" id="userIdInput" placeholder="Enter User ID or Location Link" />
+        <button id="findUserBtn">Find User</button>
+        <div id="userIdDisplay">User ID: <span id="userId"></span></div>
+        <button id="sosBtn">SOS</button>
+        <button id="replayRouteBtn">Replay Route</button>
+    </div>
+    <div id="zoomControls">
+        <button id="zoomInBtn">+</button>
+        <button id="zoomOutBtn">-</button>
+    </div>
+    <div id="map"></div>
+</body>
+
+</html>
+
+<!-- leaflet js  -->
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/0.4.1/html2canvas.min.js"></script>
+<script>
+    // Store user location without userId
+    function storeUserLocation(lat, long) {
+        var userLocations = JSON.parse(localStorage.getItem('userLocations')) || {};
+        userLocations['current'] = [lat, long];
+        localStorage.setItem('userLocations', JSON.stringify(userLocations));
+    }
+
+    // Retrieve user location without userId
+    function getUserLocation() {
+        var userLocations = JSON.parse(localStorage.getItem('userLocations')) || {};
+        return userLocations['current'];
+    }
+
+    // Map initialization 
+    var map = L.map('map', {
+        zoomControl: false // Disable default zoom control
+    }).setView([14.0860746, 100.608406], 6);
+
+    // OpenStreetMap layer
+    var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    });
+    osm.addTo(map);
+
+    // Satellite layer
+    var satellite = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.opentopomap.org/copyright">OpenTopoMap</a> contributors'
+    });
+
+    // Google Satellite layer
+    var googleSatellite = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
+    });
+
+    // Add layer control to switch between layers
+    var baseMaps = {
+        "OpenStreetMap": osm,
+        "Satellite": satellite,
+        "Google Satellite": googleSatellite
+    };
+    L.control.layers(baseMaps).addTo(map);
+
+    if (!navigator.geolocation) {
+        console.log("Your browser doesn't support geolocation feature!")
+    } else {
+        var watchID = navigator.geolocation.watchPosition(updatePosition, showError, {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+        });
+    }
+
+    var marker, circle, secondMarker, routeControl, pathLine, dotMarker;
+    var pathCoordinates = [];
+    var isRecording = false;
+    var recordedPath = [];
+    var userLocations = {};
+    var targetUserId = null;
+    var checkpoints = {};
+    var recordingLine, startMarker, endMarker;
+    var sosActive = false;
+    var sosMarker = null;
+    var replayAnimation = null;
+
+    function updatePosition(position) {
+        var lat = position.coords.latitude.toFixed(6);
+        var long = position.coords.longitude.toFixed(6);
+        var accuracy = position.coords.accuracy;
+
+        if (marker) {
+            marker.setLatLng([lat, long]).bindTooltip("Lat: " + lat + " Long: " + long).openTooltip();
+        } else {
+            marker = L.marker([lat, long]).addTo(map).bindTooltip("Lat: " + lat + " Long: " + long).openTooltip();
+        }
+
+        if (circle) {
+            circle.setLatLng([lat, long]).setRadius(20);
+        } else {
+            circle = L.circle([lat, long], { radius: 20 }).addTo(map);
+            circle.on('click', function () {
+                map.setView([lat, long], 18);
+            });
+        }
+
+        // Update path coordinates and polyline
+        pathCoordinates.push([lat, long]);
+        if (pathLine) {
+            pathLine.setLatLngs(pathCoordinates);
+        } else {
+            pathLine = L.polyline(pathCoordinates, { color: 'blue' }).addTo(map);
+        }
+
+        if (isRecording) {
+            recordedPath.push([lat, long]);
+            if (!dotMarker) {
+                dotMarker = L.circleMarker([lat, long], { radius: 5, color: 'blue' }).addTo(map);
+            } else {
+                dotMarker.setLatLng([lat, long]);
+            }
+            recordingLine.addLatLng([lat, long]);
+        }
+
+        // Store user location without userId
+        storeUserLocation(lat, long);
+
+        // Update route if target user is moving
+        if (targetUserId && userLocations[targetUserId]) {
+            var targetLocation = userLocations[targetUserId];
+            if (routeControl) {
+                map.removeControl(routeControl);
+            }
+            routeControl = L.Routing.control({
+                waypoints: [
+                    marker.getLatLng(),
+                    L.latLng(targetLocation[0], targetLocation[1])
+                ],
+                routeWhileDragging: true
+            }).on('routesfound', function (e) {
+                var routes = e.routes;
+                var summary = routes[0].summary;
+                console.log('Distance: ' + summary.totalDistance + ' meters, Time: ' + summary.totalTime + ' seconds');
+            }).on('routeselected', function (e) {
+                var route = e.route;
+                var coordinates = route.coordinates;
+                var i = 0;
+                var interval = setInterval(function () {
+                    if (i < coordinates.length) {
+                        marker.setLatLng([coordinates[i].lat, coordinates[i].lng]);
+                        i++;
+                    } else {
+                        clearInterval(interval);
+                    }
+                }, 1000);
+            }).addTo(map);
+        }
+
+        // Check distance to checkpoints
+        for (var checkpointName in checkpoints) {
+            var checkpoint = checkpoints[checkpointName];
+            var distance = map.distance([lat, long], checkpoint.latlng);
+            console.log("Distance to " + checkpointName + ": " + distance.toFixed(2) + " meters");
+        }
+
+        var featureGroup = L.featureGroup([marker, circle]).addTo(map)
+
+        map.setView([lat, long], 18); // Set the map view to the current location with a zoom level of 18
+
+        console.log("Your coordinate is: Lat: " + lat + " Long: " + long + " Accuracy: " + accuracy)
+    }
+
+    function showError(error) {
+        switch (error.code) {
+            case error.PERMISSION_DENIED:
+                console.log("User denied the request for Geolocation.")
+                break;
+            case error.POSITION_UNAVAILABLE:
+                console.log("Location information is unavailable.")
+                break;
+            case error.TIMEOUT:
+                console.log("The request to get user location timed out.")
+                break;
+            case error.UNKNOWN_ERROR:
+                console.log("An unknown error occurred.")
+                break;
+        }
+    }
+
+    function toggleButtonClass(buttonId) {
+        var buttons = document.querySelectorAll('#controls button');
+        buttons.forEach(function (button) {
+            button.classList.remove('clicked');
+        });
+        document.getElementById(buttonId).classList.add('clicked');
+    }
+
+    document.getElementById('addMarkerBtn').addEventListener('click', function () {
+        toggleButtonClass('addMarkerBtn');
+        map.once('click', function (e) {
+            if (secondMarker) {
+                map.removeLayer(secondMarker);
+            }
+            secondMarker = L.marker(e.latlng).addTo(map);
+        });
+    });
+
+    document.getElementById('routeBtn').addEventListener('click', function () {
+        toggleButtonClass('routeBtn');
+        if (marker && secondMarker) {
+            if (routeControl) {
+                map.removeControl(routeControl);
+            }
+            routeControl = L.Routing.control({
+                waypoints: [
+                    marker.getLatLng(),
+                    secondMarker.getLatLng()
+                ],
+                routeWhileDragging: true
+            }).addTo(map);
+        } else {
+            alert('Please add a second marker first.');
+        }
+    });
+
+    document.getElementById('zoomToCurrentLocationBtn').addEventListener('click', function () {
+        toggleButtonClass('zoomToCurrentLocationBtn');
+        if (marker) {
+            map.setView(marker.getLatLng(), 18);
+        } else {
+            alert('Current location not available.');
+        }
+    });
+
+    document.getElementById('startRecordBtn').addEventListener('click', function () {
+        toggleButtonClass('startRecordBtn');
+        isRecording = true;
+        recordedPath = [];
+        if (marker) {
+            startMarker = L.circleMarker(marker.getLatLng(), { radius: 5, color: 'yellow' }).addTo(map);
+        }
+        recordingLine = L.polyline([], { color: 'yellow' }).addTo(map);
+    });
+
+    document.getElementById('stopRecordBtn').addEventListener('click', function () {
+        toggleButtonClass('stopRecordBtn');
+        isRecording = false;
+        if (recordedPath.length > 0) {
+            if (marker) {
+                endMarker = L.circleMarker(marker.getLatLng(), { radius: 5, color: 'yellow' }).addTo(map);
+            }
+            // Capture the map as an image
+            html2canvas(document.getElementById('map')).then(function (canvas) {
+                var img = canvas.toDataURL('image/png');
+                var link = document.createElement('a');
+                link.href = img;
+                link.download = 'recordedPath.png';
+                link.click();
+            });
+        } else {
+            alert('No path recorded.');
+        }
+    });
+
+    document.getElementById('findUserBtn').addEventListener('click', function () {
+        var input = document.getElementById('userIdInput').value;
+        var targetLocation;
+
+        if (input.includes('google.com/maps')) {
+            var coords = input.match(/q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+            if (coords) {
+                targetLocation = [parseFloat(coords[1]), parseFloat(coords[2])];
+                if (secondMarker) {
+                    map.removeLayer(secondMarker);
+                }
+                secondMarker = L.marker(targetLocation, { icon: L.divIcon({ className: 'custom-icon', html: '<div style="background-color: red; width: 12px; height: 12px; border-radius: 50%;"></div>' }) }).addTo(map)
+                    .bindTooltip("Lat: " + targetLocation[0] + " Long: " + targetLocation[1])
+                    .openTooltip();
+                map.setView(targetLocation, 18);
+
+                // Create a path from the current location to the pasted location marker
+                if (routeControl) {
+                    map.removeControl(routeControl);
+                }
+                routeControl = L.Routing.control({
+                    waypoints: [
+                        marker.getLatLng(),
+                        L.latLng(targetLocation[0], targetLocation[1])
+                    ],
+                    routeWhileDragging: true
+                }).addTo(map);
+
+                // Activate SOS for found user
+                activateSOS(true);
+            }
+        } else {
+            targetUserId = input;
+            targetLocation = getUserLocation(targetUserId);
+        }
+
+        if (targetLocation && !input.includes('google.com/maps')) {
+            if (routeControl) {
+                map.removeControl(routeControl);
+            }
+            routeControl = L.Routing.control({
+                waypoints: [
+                    marker.getLatLng(),
+                    L.latLng(targetLocation[0], targetLocation[1])
+                ],
+                routeWhileDragging: true
+            }).addTo(map);
+
+            // Activate SOS for found user
+            activateSOS(true);
+        } else if (!targetLocation) {
+            alert('User ID or Location not found.');
+        }
+    });
+
+    document.getElementById('createCheckpointBtn').addEventListener('click', function () {
+        toggleButtonClass('createCheckpointBtn');
+        map.once('click', function (e) {
+            var latlng = e.latlng;
+            var checkpointName = prompt("Enter checkpoint name:");
+            if (checkpointName) {
+                var checkpointMarker = L.circleMarker(latlng, { radius: 5, color: 'red' }).addTo(map);
+                checkpointMarker.bindTooltip("Lat: " + latlng.lat.toFixed(6) + " Long: " + latlng.lng.toFixed(6) + " Name: " + checkpointName).openTooltip();
+                checkpoints[checkpointName] = { latlng: latlng, marker: checkpointMarker };
+            }
+        });
+    });
+
+    document.getElementById('zoomInBtn').addEventListener('click', function () {
+        map.zoomIn();
+    });
+
+    document.getElementById('zoomOutBtn').addEventListener('click', function () {
+        map.zoomOut();
+    });
+
+    document.getElementById('sosBtn').addEventListener('click', function () {
+        if (!sosActive) {
+            activateSOS(false); // Do not activate SOS for current location
+        } else {
+            deactivateSOS();
+        }
+    });
+
+    document.getElementById('replayRouteBtn').addEventListener('click', function () {
+        toggleButtonClass('replayRouteBtn');
+        replayRoute();
+    });
+
+    document.getElementById('shareLocationBtn').addEventListener('click', function () {
+        toggleButtonClass('shareLocationBtn');
+        if (marker) {
+            const pos = marker.getLatLng();
+            const shareText = `My location: https://www.google.com/maps?q=${pos.lat},${pos.lng}`;
+
+            // Try using the Web Share API if available
+            if (navigator.share) {
+                navigator.share({
+                    title: 'My Location',
+                    text: shareText,
+                    url: `https://www.google.com/maps?q=${pos.lat},${pos.lng}`
+                }).catch(err => {
+                    console.log('Share failed:', err);
+                });
+            } else {
+                // Fallback to copying to clipboard
+                navigator.clipboard.writeText(shareText);
+                alert('Location copied to clipboard!');
+            }
+        } else {
+            alert('Current location not available');
+        }
+    });
+
+    function activateSOS(forFoundUser) {
+        sosActive = true;
+        document.getElementById('sosBtn').classList.add('sos-active');
+
+        if (forFoundUser && secondMarker) {
+            // Create SOS marker for found user
+            if (sosMarker) map.removeLayer(sosMarker);
+            sosMarker = L.circleMarker(secondMarker.getLatLng(), {
+                radius: 20,
+                color: 'red',
+                fillColor: '#f03',
+                fillOpacity: 0.5
+            }).addTo(map);
+
+            // Flash the SOS marker
+            let expanding = true;
+            setInterval(() => {
+                if (expanding) {
+                    sosMarker.setRadius(sosMarker.getRadius() + 5);
+                    if (sosMarker.getRadius() > 50) expanding = false;
+                } else {
+                    sosMarker.setRadius(sosMarker.getRadius() - 5);
+                    if (sosMarker.getRadius() < 20) expanding = true;
+                }
+            }, 200);
+
+            // Simulate sending SOS signal
+            console.log('SOS signal sent from location:', secondMarker.getLatLng());
+        }
+    }
+
+    function deactivateSOS() {
+        sosActive = false;
+        document.getElementById('sosBtn').classList.remove('sos-active');
+        if (sosMarker) {
+            map.removeLayer(sosMarker);
+            sosMarker = null;
+        }
+    }
+
+    function replayRoute() {
+        if (recordedPath.length < 2) {
+            alert('No recorded route to replay');
+            return;
+        }
+
+        if (replayAnimation) {
+            map.removeLayer(replayAnimation);
+        }
+
+        const replayMarker = L.circleMarker([recordedPath[0][0], recordedPath[0][1]], {
+            radius: 8,
+            color: '#ff3300',
+            fillColor: '#ff3300',
+            fillOpacity: 0.7
+        }).addTo(map);
+
+        let i = 0;
+        replayAnimation = setInterval(() => {
+            if (i < recordedPath.length) {
+                replayMarker.setLatLng([recordedPath[i][0], recordedPath[i][1]]);
+                map.setView([recordedPath[i][0], recordedPath[i][1]], map.getZoom());
+                replayMarker.bindTooltip(`Lat: ${recordedPath[i][0].toFixed(6)} Long: ${recordedPath[i][1].toFixed(6)}`).openTooltip();
+                i++;
+            } else {
+                clearInterval(replayAnimation);
+                map.removeLayer(replayMarker);
+            }
+        }, 500); // Move faster by reducing the interval time
+    }
+</script>
