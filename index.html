@@ -259,9 +259,6 @@
                 var interval = setInterval(function () {
                     if (i < coordinates.length) {
                         marker.setLatLng([coordinates[i].lat, coordinates[i].lng]);
-                        // Remove the part of the path that has been traveled
-                        pathCoordinates.shift();
-                        pathLine.setLatLngs(pathCoordinates);
                         i++;
                     } else {
                         clearInterval(interval);
@@ -351,7 +348,7 @@
         isRecording = true;
         recordedPath = [];
         if (marker) {
-            startMarker = L.circleMarker(marker.getLatLng(), { radius: 5, color: 'yellow', weight: 2, fillColor: 'yellow', fillOpacity: 1, stroke: true, color: 'black' }).addTo(map);
+            startMarker = L.circleMarker(marker.getLatLng(), { radius: 5, color: 'yellow' }).addTo(map);
         }
         recordingLine = L.polyline([], { color: 'yellow' }).addTo(map);
     });
@@ -361,7 +358,7 @@
         isRecording = false;
         if (recordedPath.length > 0) {
             if (marker) {
-                endMarker = L.circleMarker(marker.getLatLng(), { radius: 5, color: 'yellow', weight: 2, fillColor: 'yellow', fillOpacity: 1, stroke: true, color: 'black' }).addTo(map);
+                endMarker = L.circleMarker(marker.getLatLng(), { radius: 5, color: 'yellow' }).addTo(map);
             }
             // Capture the map as an image
             html2canvas(document.getElementById('map')).then(function (canvas) {
