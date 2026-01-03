@@ -1,5 +1,7 @@
 # 📊 Architecture Diagram
 
+![profile-picgnanesh-gemini](https://github.com/user-attachments/assets/48632e30-3c6b-4135-aff2-ab66a3446013)
+
 ## Web to Mobile Conversion Flow
 
 ```mermaid
